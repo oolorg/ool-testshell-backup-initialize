@@ -90,6 +90,7 @@ class tsbk_manager:
         self.limit_disk_size=LIMIT_DISK_SIZE_G
         self.interval_time=INTERVAL_TIME
         self.loop_timeout_m=ROOP_TIME_OUT
+        self.opencenter_server_name=""
         self.storage_server_name=""
         self.logpath="/var/log/br/"
         self.logfile="ddd.log"
@@ -146,11 +147,13 @@ class tsbk_manager:
 
         self.limit_disk_size = int(conf.get('options', 'limit_disk_size'))
         self.interval_time = int(conf.get('options', 'interval_time'))
+        self.opencenter_server_name=conf.get('options','opencenter_server_name')
         self.storage_server_name = conf.get('options', 'storage_server_name')
         self.loop_timeout_m = int(conf.get('options', 'loop_timeout_m'))
 
         self.br_log(node_id, clster_name, br_mode, '####read_file limit_disk_size :%s' %(self.limit_disk_size) )
         self.br_log(node_id, clster_name, br_mode, '####read_file interval_time :%s' %(self.interval_time) )
+        self.br_log(node_id, clster_name, br_mode, '####read_file opencenter_server_name :%s' %(self.opencenter_server_name) )
         self.br_log(node_id, clster_name, br_mode, '####read_file storage_server_name :%s' %(self.storage_server_name) )
         self.br_log(node_id, clster_name, br_mode, '####read_file loop_timeout_m :%s' %(self.loop_timeout_m) )
 
@@ -193,6 +196,18 @@ class tsbk_manager:
         retdata =[server_node_name, switch_node_name]
 
         return retdata
+
+    def get_user_name(self, host_name):
+        ori=ool_rm_if.ool_rm_if()
+        ori.set_auth(self.token)
+        data = ori.get_device(host_name)
+
+        if -1 != data[0]:
+            data1={}
+            data1=data[1]
+            return [0, data1['user_name']]
+        else:
+            return [-1,'NG']
 
     def set_server_info(self, node_id, server_info_list,server_name, name, br_mode):
 
@@ -645,7 +660,13 @@ class tsbk_manager:
         #B Set Exec_User
         ################
         self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User')
-        EXEC_USER=server_info[STORAGE_SV][USER_INDEX]
+        ret = self.get_user_name(self.opencenter_server_name)
+        if 0 == ret[0]:
+            EXEC_USER=ret[1]
+        else:
+            self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User error')
+            msg='Set Exec_User error'
+            return [NG, msg]
 
 
         #####################################
@@ -737,7 +758,7 @@ class tsbk_manager:
         if switch_num != 0:
             self.br_log(node_id, CLSTER_NAME, br_mode, '####SWITCH  Run Switch backup Start')
 
-            psbk=psbk_manager.psbk_manager(self.storage_server_name, SAVE_DIR_NAME_SWITCH,self.logObj)
+            psbk=psbk_manager.psbk_manager(EXEC_USER, self.storage_server_name, SAVE_DIR_NAME_SWITCH,self.logObj)
 
             self.br_log(node_id, CLSTER_NAME, br_mode, '####SWITCH  Call psbk.set_PS_list')
 
@@ -1254,7 +1275,13 @@ class tsbk_manager:
         #R Set Exec_User
         ################
         self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User')
-        EXEC_USER=server_info[STORAGE_SV][USER_INDEX]
+        ret = self.get_user_name(self.opencenter_server_name)
+        if 0 == ret[0]:
+            EXEC_USER=ret[1]
+        else:
+            self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User error')
+            msg='Set Exec_User error'
+            return [NG, msg]
 
 
         #####################################
@@ -1396,7 +1423,7 @@ class tsbk_manager:
         if switch_num != 0:
             self.br_log(node_id, CLSTER_NAME, br_mode, '#### Run Switch restore Start')
 
-            psbk=psbk_manager.psbk_manager(self.storage_server_name, SAVE_DIR_NAME_SWITCH,self.logObj)
+            psbk=psbk_manager.psbk_manager(EXEC_USER, self.storage_server_name, SAVE_DIR_NAME_SWITCH,self.logObj)
 
             self.br_log(node_id, CLSTER_NAME, br_mode, '#### SWITCH Call psbk.set_PS_list')
 
@@ -1531,14 +1558,12 @@ class tsbk_manager:
                 os.remove(FILEDIR+R_STOP_FILENAME)
                 msg='#### force stop '
                 return [NG, msg]
-                break
 
             #time-out
             if HH >= self.loop_timeout_m :
                 self.br_log(node_id, CLSTER_NAME, br_mode, '#### HH is %s hour Over stop' %(self.loop_timeout_m))
                 msg='#### HH is %s hour Over stop ' %(self.loop_timeout_m)
                 return [NG, msg]
-                break
 
 
         self.br_log(node_id, CLSTER_NAME, br_mode, '#### Complete Success')
