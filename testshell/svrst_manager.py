@@ -574,7 +574,7 @@ class svrst_manager():
 			ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
 			if ret!=0:
 				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node err %s' %(server_info[i][NAME_INDEX]))
-				return ['NG', 'Delete node err %s' %(self.server_list[i])]
+#				return ['NG', 'Delete node err %s' %(self.server_list[i])]
 
 		############################
 		#Delete info from chef
