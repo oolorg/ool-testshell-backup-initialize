@@ -54,8 +54,6 @@ MODE_RESTORE= "restore"
 MODE_NONE= "none"
 
 OCCHEF='occhef'
-#OPEN_ORION='172.16.1.51'
-OPEN_ORION='172.16.1.184'
 
 KNIFE='/opt/chef-server/bin/knife'
 
@@ -530,12 +528,26 @@ class svrst_manager():
 				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### MM is %s min Over stop' %(self.loop_timeout_m))
 				break
 
+		self.ori.set_auth(self.Token)
+		#####################################
+		#get IP-Address of Open Orion 
+		#####################################
+		#get IP address
+		data=self.ori.get_nic_traffic_info(self.opencenter_server_name, 'M-Plane')
+		#get ip address
+		if -1 != data[0]:
+			data1={}
+			data1=data[1][0]
+			OPEN_ORION=data1['ip_address']
+		else:
+			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, "get ip_address error:%s" %(data[1]))
+			return ['NG', 'get ip_address error']
+
 		#####################################
 		#Set chef Make Exec Env
 		#####################################
 		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set chef Make Exec Env')
 
-		self.ori.set_auth(self.Token)
 		data= self.ori.get_device(OCCHEF)
 		if -1 == data[0]:
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set chef get_device err')
@@ -561,89 +573,91 @@ class svrst_manager():
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set chef Make Exec err')
 			return ['NG', 'Set chef make_exec err']
 
-		############################
-		#Delete node from OpenOrion
-		############################
-		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node')
-
-		end_point =  'https://admin:password@%s:8443/' % (OPEN_ORION)
-
-		for i in range(START_INDEX, server_cnt):
-			cmd = 'opencentercli node delete %s --endpoint %s 2> /dev/null' % (server_info[i][NAME_INDEX], end_point)
-
-			ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
-			if ret!=0:
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node err %s' %(server_info[i][NAME_INDEX]))
-#				return ['NG', 'Delete node err %s' %(self.server_list[i])]
-
-		############################
-		#Delete info from chef
-		############################
-		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete info from chef')
-
-		for i in range(START_INDEX, server_cnt):
-			cmd = 'ssh root@%s %s node delete -y %s 2> /dev/null' % (chef_ip, KNIFE, server_info[i][NAME_INDEX])
-
-			ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
-			if ret!=0:
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node from chef err (%s)' %(server_info[i][NAME_INDEX]))
-#				return ['NG', 'Delete node from chef err (%s)' %(server_info[i][NAME_INDEX])]
-		
-			cmd = 'ssh root@%s %s client delete -y %s 2> /dev/null' % (chef_ip, KNIFE, server_info[i][NAME_INDEX])
-
-			ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
-			if ret!=0:
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete client from chef err (%s)' %(server_info[i][NAME_INDEX]))
-#				return ['NG', 'Delete client from chef err (%s)' %(server_info[i][NAME_INDEX])]
-
-		###############################
-		#setup opencenter-agent to node
-		###############################
-		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent')
-
-		for i in range(START_INDEX, server_cnt):
-			cmd = '/bin/rm -r /etc/opencenter'
-			cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
-
-			ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
-			if ret!=0:
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX]))
-				return ['NG', 'setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX])]
-
-			cmd = 'curl -s -L http://sh.opencenter.rackspace.com/install.sh | sudo bash -s - --role=agent --ip=%s' % (OPEN_ORION)
-			cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
+		if (0 != server_num) :
+			############################
+			#Delete node from OpenOrion
+			############################
+			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node')
+	
+			end_point =  'https://admin:password@%s:8443/' % (OPEN_ORION)
+	
+			for i in range(START_INDEX, server_cnt):
+				cmd = 'opencentercli node delete %s --endpoint %s 2> /dev/null' % (server_info[i][NAME_INDEX], end_point)
+	
+				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+				if ret!=0:
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node err %s' %(server_info[i][NAME_INDEX]))
+#					return ['NG', 'Delete node err %s' %(self.server_list[i])]
+	
+			############################
+			#Delete info from chef
+			############################
+			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete info from chef')
+	
+			for i in range(START_INDEX, server_cnt):
+				cmd = 'ssh root@%s %s node delete -y %s 2> /dev/null' % (chef_ip, KNIFE, server_info[i][NAME_INDEX])
+	
+				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+				if ret!=0:
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node from chef err (%s)' %(server_info[i][NAME_INDEX]))
+#					return ['NG', 'Delete node from chef err (%s)' %(server_info[i][NAME_INDEX])]
 			
-			ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
-			if ret!=0:
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX]))
-				return ['NG', 'setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX])]
+				cmd = 'ssh root@%s %s client delete -y %s 2> /dev/null' % (chef_ip, KNIFE, server_info[i][NAME_INDEX])
+	
+				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+				if ret!=0:
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete client from chef err (%s)' %(server_info[i][NAME_INDEX]))
+#					return ['NG', 'Delete client from chef err (%s)' %(server_info[i][NAME_INDEX])]
+	
+			###############################
+			#setup opencenter-agent to node
+			###############################
+			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent')
+	
+			for i in range(START_INDEX, server_cnt):
+				cmd = '/bin/rm -r /etc/opencenter'
+				cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
+	
+				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+				if ret!=0:
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX]))
+#					return ['NG', 'setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX])]
+	
+				cmd = 'curl -s -L http://sh.opencenter.rackspace.com/install.sh | sudo bash -s - --role=agent --ip=%s' % (OPEN_ORION)
+				cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
+				
+				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+				if ret!=0:
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX]))
+#					return ['NG', 'setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX])]
 
-		########################
-		#Set_Parent_id by switch
-		########################
-		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set_Parent_id by switch')
+		if ( 0 != switch_num):
+			########################
+			#Set_Parent_id by switch
+			########################
+			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set_Parent_id by switch')
 
-		if -1 == self._open_sql():
-			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Parent_id by switch open sql err')
-			return ['NG', 'Set Parent_id by switch open sql err' ]
+			if -1 == self._open_sql():
+				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Parent_id by switch open sql err')
+				return ['NG', 'Set Parent_id by switch open sql err' ]
 
-		sql = 'select * from nodes where name="%s"' % KEY_SW
-		result = self._show_sql(sql)
-		availablesw_id=result[0][0]
-
-		for i in range(0, switch_num):
-			sql = 'select * from nodes where name="%s"' % self.switch_list[i]
+			sql = 'select * from nodes where name="%s"' % KEY_SW
 			result = self._show_sql(sql)
-			node_id=result[0][0]
+			availablesw_id=result[0][0]
 
-			sql = 'update facts set value=%s where node_id=%s and key="%s"' % (availablesw_id, node_id, KEY_PARENT)
-			result = self._update_sql(sql)
-			if -1 == result:
-				self._close_sql()
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Parent_id by switch update sql err')
-				return ['NG', 'Set Parent_id by switch update sql err' ]
+			for i in range(0, switch_num):
+				sql = 'select * from nodes where name="%s"' % self.switch_list[i]
+				result = self._show_sql(sql)
+				node_id=result[0][0]
 
-		self._close_sql()
+				sql = 'update facts set value=%s where node_id=%s and key="%s"' % (availablesw_id, node_id, KEY_PARENT)
+				result = self._update_sql(sql)
+				if -1 == result:
+					self._close_sql()
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Parent_id by switch update sql err')
+					return ['NG', 'Set Parent_id by switch update sql err' ]
+
+			self._close_sql()
 
 		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Complete Success')
 		return ['OK', 'success']
