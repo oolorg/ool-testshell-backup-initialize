@@ -51,7 +51,7 @@ DEBUG="OFF"
 B_STOP_FILENAME="/b_stop"
 R_STOP_FILENAME="/r_stop"
 ROOP_TIME_OUT=60
-RESTORE_MAX_INDEX=1
+RESTORE_MAX_INDEX=2
 
 MODE_BACKUP = "backup"
 MODE_RESTORE= "restore"
@@ -81,6 +81,10 @@ BR_AGENT_SRC_DIR='/etc/backuprestore'
 BR_AGENT='br_agent_update'
 BR_AGENT_DST_DIR='/boot'
 
+BR_ORG_UPDATE='br.org_update'
+BR_ORG='br.org'
+
+
 ###############################
 #Server Backup Up Manager
 ###############################
@@ -95,7 +99,7 @@ class tsbk_manager:
         self.storage_server_name=""
         self.restore_maxFolderNum = RESTORE_MAX_INDEX
         self.logpath="/var/log/br/"
-        self.logfile="ddd.log"
+        self.logfile="default.log"
         self.token=""
         self.date_time = datetime.datetime.today()
         self.folder_date_str = self.date_time.strftime("%Y_%m%d_%H%M%S---")
@@ -204,6 +208,12 @@ class tsbk_manager:
 
         server_node_name = retArray[0]
         switch_node_name = retArray[1]
+
+
+        if( len(node_name) != len(server_node_name+switch_node_name)):
+            self.br_log(node_id, name, br_mode, '*node different err node_name:%s server_node_name:%s  switch_node_name%s'
+             %(node_name, server_node_name,switch_node_name))
+            return  [1, server_node_name, switch_node_name]
 
         self.br_log(node_id, name, br_mode, '*** Resouce Manager DB SERVER_NODE_NAME  : %s' % server_node_name)
         self.br_log(node_id, name, br_mode, '*** Resouce Manager DB SWITCH_NODE_NAME  : %s' % switch_node_name)
@@ -843,6 +853,16 @@ class tsbk_manager:
                 self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br_agent_update [%s] err ' %(server_info[i][IP_INDEX]) )
                 msg='copy br_agent_update [%s] err ' % (server_info[i][IP_INDEX])
                 return [NG, msg]
+
+            #copy br.org_update for fast
+            cmd='scp %s/%s %s@%s:%s/%s' %(BR_AGENT_SRC_DIR, BR_ORG_UPDATE, server_info[i][USER_INDEX], server_info[i][IP_INDEX], BR_AGENT_DST_DIR, BR_ORG)
+            ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
+
+            if ret!=0:
+                self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br.org_update [%s] err ' %(server_info[i][IP_INDEX]) )
+                msg='copy br.org_update [%s] err ' % (server_info[i][IP_INDEX])
+                return [NG, msg]
+
 
             #exec br_agent
             cmd='ssh root@%s  /boot/%s  %s  %s  b %s' %(server_info[i][IP_INDEX],BR_AGENT,  server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
@@ -1706,6 +1726,15 @@ class tsbk_manager:
             if ret!=0:
                 self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br_agent_update [%s] err ' %(server_info[i][IP_INDEX]) )
                 msg='copy br_agent_update [%s] err ' % (server_info[i][IP_INDEX])
+                return [NG, msg]
+
+            #copy br.org_update for fast
+            cmd='scp %s/%s %s@%s:%s/%s' %(BR_AGENT_SRC_DIR, BR_ORG_UPDATE, server_info[i][USER_INDEX], server_info[i][IP_INDEX], BR_AGENT_DST_DIR, BR_ORG)
+            ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
+
+            if ret!=0:
+                self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br.org_update [%s] err ' %(server_info[i][IP_INDEX]) )
+                msg='copy br.org_update [%s] err ' % (server_info[i][IP_INDEX])
                 return [NG, msg]
 
             #exec br_agent
