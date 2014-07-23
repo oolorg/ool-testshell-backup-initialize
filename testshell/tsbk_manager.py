@@ -200,6 +200,7 @@ class tsbk_manager:
 
         utls=svbk_utls.svbk_utls()
         utls.set_auth(self.token)
+        #utls.set_auth("aaa")
         retArray = utls.separate_node(node_name)
 
         if( isinstance(retArray[0],list) == False or isinstance(retArray[1],list)== False ):
@@ -841,38 +842,33 @@ class tsbk_manager:
         ################
         #B Run backup
         ################
-        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Run backup')
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Run backup2')
 
         for i in range(START_INDEX, server_cnt):
-
-            #copy br_agent_update
-            cmd='scp %s/%s %s@%s:%s' %(BR_AGENT_SRC_DIR, BR_AGENT, server_info[i][USER_INDEX], server_info[i][IP_INDEX], BR_AGENT_DST_DIR)
-            ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
-
-            if ret!=0:
-                self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br_agent_update [%s] err ' %(server_info[i][IP_INDEX]) )
-                msg='copy br_agent_update [%s] err ' % (server_info[i][IP_INDEX])
+            # update_br_agent
+            svbkutl=svbk_utls.svbk_utls()
+            ret =svbkutl.update_br_agent(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
+            if NG == ret[0]:
+                msg='update_br_agent backup [%s] err ' % (server_info[i][IP_INDEX])
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
                 return [NG, msg]
 
             #copy br.org_update for fast
-            cmd='scp %s/%s %s@%s:%s/%s' %(BR_AGENT_SRC_DIR, BR_ORG_UPDATE, server_info[i][USER_INDEX], server_info[i][IP_INDEX], BR_AGENT_DST_DIR, BR_ORG)
-            ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
-
-            if ret!=0:
-                self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br.org_update [%s] err ' %(server_info[i][IP_INDEX]) )
+            ret =svbkutl.update_br_org(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
+            if NG == ret[0]:
                 msg='copy br.org_update [%s] err ' % (server_info[i][IP_INDEX])
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
                 return [NG, msg]
-
 
             #exec br_agent
-            cmd='ssh root@%s  /boot/%s  %s  %s  b %s' %(server_info[i][IP_INDEX],BR_AGENT,  server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
+            cmd='ssh root@%s /boot/%s %s %s b %s' %(server_info[i][IP_INDEX], svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
             ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
             if ret!=0:
-                #self.logger.debug('make run backup err '  )
-                self.br_log(node_id, CLSTER_NAME, br_mode, '#### make run backup err ')
-                #return self._fail(msg='make run backup err')
-                msg='make run backup err'
+                msg='make run backup  [%s] err ' % (server_info[i][IP_INDEX])
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
                 return [NG, msg]
+
+
 
 
         ################
@@ -1182,7 +1178,46 @@ class tsbk_manager:
 
         return 0
 
-        
+
+    def get_dblist(self, node_id, Token,br_mode, topology_name, domain):
+
+        db_clster_name = "TS_" + domain +"_" + topology_name + "_ID0"
+
+        CLSTER_NAME = "TS_" + domain +"_" + topology_name 
+
+        self.set_token(CLSTER_NAME, node_id, br_mode, Token)
+
+        self.br_log(node_id, CLSTER_NAME, br_mode, '###get_dblist   topology_name=%s, domain=%s db_clster_name=%s' %(topology_name,domain,db_clster_name))
+
+        #################
+        #get retore folder name
+        #################
+        getArray = self.get_restore_folder_list(node_id, CLSTER_NAME, br_mode, db_clster_name)
+
+        #folder serch :ng check
+        if getArray[0] != 0:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '###backup data is none')
+            self.br_log(node_id, CLSTER_NAME, br_mode, '###backup folder get err')
+            return [1,"###backup data is none"]
+
+        data = getArray[1]
+
+        #self.br_log(node_id, CLSTER_NAME, br_mode, '###backupFolderList=%s' %(data))
+
+        restore_data_all=""
+
+        #data length cheack
+        if( len(data) <= 0 ):
+            return [0,"###backup data is none len=%s" %(len(data))]
+        else:
+            for i in range(len(data)):
+                msg="  Index: %s -> %s ::" %(i+1,data[i])
+                restore_data_all=restore_data_all+msg
+
+        self.br_log(node_id, CLSTER_NAME, br_mode, '###return msg =%s' %(restore_data_all))
+
+        return [0,restore_data_all]
+
 
     def delete_data_and_dblist(self,node_id, CLSTER_NAME, br_mode, topology_name, domain, server_info, SAVE_DIR_NAME, EXEC_USER):
 
@@ -1714,35 +1749,31 @@ class tsbk_manager:
             return [NG, msg]
 
         ################
-        #R Run backup
+        #R Run Restore
         ################
-        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Run backup')
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Run Restore 2')
 
         for i in range(START_INDEX, server_cnt):
-            #copy br_agent_update
-            cmd='scp %s/%s %s@%s:%s' %(BR_AGENT_SRC_DIR, BR_AGENT, server_info[i][USER_INDEX], server_info[i][IP_INDEX], BR_AGENT_DST_DIR)
-            ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
-
-            if ret!=0:
-                self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br_agent_update [%s] err ' %(server_info[i][IP_INDEX]) )
-                msg='copy br_agent_update [%s] err ' % (server_info[i][IP_INDEX])
+            # update_br_agent
+            svbkutl=svbk_utls.svbk_utls()
+            ret = svbkutl.update_br_agent(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
+            if NG == ret[0]:
+                msg='update_br_agent backup [%s] err ' % (server_info[i][IP_INDEX])
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
                 return [NG, msg]
 
             #copy br.org_update for fast
-            cmd='scp %s/%s %s@%s:%s/%s' %(BR_AGENT_SRC_DIR, BR_ORG_UPDATE, server_info[i][USER_INDEX], server_info[i][IP_INDEX], BR_AGENT_DST_DIR, BR_ORG)
-            ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
-
-            if ret!=0:
-                self.br_log(node_id, CLSTER_NAME, br_mode, '#### copy br.org_update [%s] err ' %(server_info[i][IP_INDEX]) )
+            ret =svbkutl.update_br_org(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
+            if NG == ret[0]:
                 msg='copy br.org_update [%s] err ' % (server_info[i][IP_INDEX])
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
                 return [NG, msg]
 
-            #exec br_agent
-            cmd='ssh root@%s  /boot/%s  %s  %s  r %s' %(server_info[i][IP_INDEX],BR_AGENT,  server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
+            cmd='ssh root@%s /boot/%s %s %s r %s' %(server_info[i][IP_INDEX], svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
             ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
             if ret!=0:
-                self.br_log(node_id, CLSTER_NAME, br_mode, '#### make run backup err ')
-                msg='make run backup err'
+                msg='make run resotre  [%s] err ' % (server_info[i][IP_INDEX])
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
                 return [NG, msg]
 
 
