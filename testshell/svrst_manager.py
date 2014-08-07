@@ -9,6 +9,8 @@ import os
 import ConfigParser
 import ool_rm_if
 import sqlite3
+import sys
+import pexpect
 
 #disk size
 LIMIT_DISK_SIZE_G=1
@@ -56,6 +58,16 @@ MODE_NONE= "none"
 OCCHEF='occhef'
 
 KNIFE='/opt/chef-server/bin/knife'
+
+TIMEOUT=30
+WAIT_CNT=10
+CONSOLE_OUT_FLAG='ON'
+EXPECT_STDPT='.*$'
+EXPECT_LOGIN='login:'
+EXPECT_PASSWD='password:'
+EXPECT_YESNO='.*\(yes/no\)\?'
+SEND_EXIT='exit'
+SEND_YES='yes'
 
 #---------------------------------------------------------
 class svrst_manager():
@@ -153,6 +165,33 @@ class svrst_manager():
 			cursor.close()
 
 		return 0
+
+	def _restart_opencenter_agent(self, ip, uname, upw):
+		
+		for i in range(1,WAIT_CNT):
+			c = pexpect.spawn('ssh -l %s %s' % (uname, ip),  timeout=TIMEOUT)
+			if 'ON' == CONSOLE_OUT_FLAG:
+				c.logfile=sys.stdout
+
+		i = c.expect([EXPECT_YESNO, EXPECT_PASSWD])
+		if 0==i:
+			c.sendline(SEND_YES)
+			c.expect(EXPECT_PASSWD)
+			c.sendline(upw)
+		if 1==i:
+			c.sendline(upw)
+
+		c.expect(EXPECT_STDPT,  timeout=TIMEOUT)
+		c.sendline('sudo service opencenter-agent restart')
+
+		c.expect('.*password for .*',  timeout=TIMEOUT)
+		c.sendline(upw)
+
+		c.expect(EXPECT_STDPT,  timeout=TIMEOUT)
+		c.sendline(SEND_EXIT)
+
+		c.expect(pexpect.EOF)
+		c.close()
 
 	def set_system_param(self,clster_name,node_id,br_mode):
 
@@ -447,14 +486,23 @@ class svrst_manager():
 			svbkutl=svbk_utls.svbk_utls()
 			ret =svbkutl.update_br_agent(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
 			if NG == ret[0]:
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### update_br_agent reset err ')
-				return ['NG', 'update_br_agent reset err']
+				msg=' update_br_agent reset [%s] err' % server_info[i][IP_INDEX]
+				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### %s' % msg)
+				return ['NG', msg]
+
+			#copy br.org_update for fast
+			ret =svbkutl.update_br_org(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
+			if NG == ret[0]:
+				msg='copy br.org_update [%s] err ' % (server_info[i][IP_INDEX])
+				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, msg )
+				return ['NG', msg]
 
 			cmd='ssh root@%s  /boot/%s  %s  %s  r %s' %(server_info[i][IP_INDEX],  svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
 			ret = self.svbkm.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
 			if ret != 0:
-				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### make run reset err ')
-				return ['NG', 'make run reset err']
+				msg=' make run reset [%s] err' % server_info[i][IP_INDEX]
+				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### %s' % msg)
+				return ['NG', msg]
 
 		################
 		#Start status check
@@ -530,11 +578,21 @@ class svrst_manager():
 
 		self.ori.set_auth(self.Token)
 		#####################################
-		#get IP-Address of Open Orion 
+		#get Info of Open Orion 
 		#####################################
+		data= self.ori.get_device(self.opencenter_server_name)
+		if -1 == data[0]:
+			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set openorion get_device err')
+			return ['NG', 'Set openorion get_device err']
+
+		dev_data={}
+		dev_data=data[1]
+		OPEN_ORION_user=dev_data['user_name']
+		OPEN_ORION_upw=dev_data['password']
+		
 		#get IP address
 		data=self.ori.get_nic_traffic_info(self.opencenter_server_name, 'M-Plane')
-		#get ip address
+
 		if -1 != data[0]:
 			data1={}
 			data1=data[1][0]
@@ -584,7 +642,7 @@ class svrst_manager():
 			for i in range(START_INDEX, server_cnt):
 				cmd = 'opencentercli node delete %s --endpoint %s 2> /dev/null' % (server_info[i][NAME_INDEX], end_point)
 	
-				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+				ret = self.svbkm.shellcmd_exec(OPEN_ORION_user, br_mode, node_id, CLSTER_NAME, cmd)
 				if ret!=0:
 					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Delete node err %s' %(server_info[i][NAME_INDEX]))
 #					return ['NG', 'Delete node err %s' %(self.server_list[i])]
@@ -615,21 +673,45 @@ class svrst_manager():
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent')
 	
 			for i in range(START_INDEX, server_cnt):
+				while 1:
+					ret=self.svbkm.make_exec(EXEC_USER, server_info[i][IP_INDEX], server_info[i][USER_INDEX], server_info[i][PW_INDEX], FILEDIR, br_mode, node_id, CLSTER_NAME)
+					if ret != 0:
+						self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### rsa key copy all=%d index=%d' %(server_cnt, i) )
+
+					cmd = 'ls'
+					cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
+					ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
+					if ret!=0:
+						self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### chk boot-up  NG(%s)' %(server_info[i][NAME_INDEX]))
+					else:
+						self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### chk boot-up  OK(%s)' %(server_info[i][NAME_INDEX]))
+						break
+
 				cmd = '/bin/rm -r /etc/opencenter'
 				cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
 	
-				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+				ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
 				if ret!=0:
 					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX]))
 #					return ['NG', 'setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX])]
 	
 				cmd = 'curl -s -L http://sh.opencenter.rackspace.com/install.sh | sudo bash -s - --role=agent --ip=%s' % (OPEN_ORION)
 				cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
-				
-				ret = self.svbkm.shellcmd_exec(chef_user, br_mode, node_id, CLSTER_NAME, cmd)
+
+				ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
 				if ret!=0:
 					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX]))
 #					return ['NG', 'setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX])]
+
+				cmd = 'patch /usr/share/pyshared/opencenteragent/__init__.py < /home/openstack/agent.patch'
+				cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
+
+				ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
+				if ret!=0:
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent patch err (%s)' %(OPEN_ORION))
+
+			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### OpenOrion agent restart')
+			self._restart_opencenter_agent(OPEN_ORION, OPEN_ORION_user, OPEN_ORION_upw)
 
 		if ( 0 != switch_num):
 			########################
