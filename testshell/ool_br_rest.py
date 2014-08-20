@@ -127,7 +127,7 @@ def reset():
 			raise Exception
 
 		br_mode = req_data[KEY_BR_MODE]
-		if (('r' != br_mode) and ('b' != br_mode) and ('i' != br_mode)):
+		if (('r' != br_mode) and ('b' != br_mode) and ('i' != br_mode) and ('r_info' != br_mode) and ('del' != br_mode)):
 			err_msg=KEY_BR_MODE
 			raise Exception
 	
@@ -151,6 +151,27 @@ def reset():
 
 	# Exectute
 	res_data = {}
+
+	if 'del' == br_mode:
+
+
+		index = option["index"];
+
+		tsbk=tsbk_manager.tsbk_manager(logger)
+
+		retArray = tsbk.delete_dblist(0, Token, br_mode, topology_name, tenant_name, index)
+
+		res_data.update({KEY_STATUS:retArray[0]})
+		res_data.update({KEY_MSG:retArray[1]})
+
+	if 'r_info' == br_mode:
+		tsbk=tsbk_manager.tsbk_manager(logger)
+
+		retArray = tsbk.get_dblist(0, Token, br_mode, topology_name, tenant_name)
+
+		res_data.update({KEY_STATUS:retArray[0]})
+		res_data.update({KEY_MSG:retArray[1]})
+
 	if 'r' == br_mode:
 		#pass
 		#ret=["OK","restore success"]
@@ -162,34 +183,20 @@ def reset():
 		#res_data.update({KEY_STATUS:retArray[0]})
 		#res_data.update({KEY_MSG:retArray[1]})
 
-		#print option["method"]
 		print option["index"]
 
-		#if 'new' == option["method"]:
-
-		#retArray=["OK","restore success"]
-		#res_data.update({KEY_STATUS:retArray[0]})
-		#res_data.update({KEY_MSG:retArray[1]})
+		index = option["index"];
 
 		tsbk=tsbk_manager.tsbk_manager(logger)
-		db_clster_name = "TS_" + tenant_name +"_" + topology_name + "_ID0"
-		CLSTER_NAME = tenant_name + "_"+ topology_name
+		retArray = tsbk.restore_cluster_index(0, Token, topology_name, tenant_name, node_list,index)
 
-		tsbk.set_token(CLSTER_NAME, 0, "r", Token)
-		ret=tsbk.get_restore_top_foldername(0, CLSTER_NAME, "r",db_clster_name)
-
-		if ret[0] == 0 and len(ret[1]) >= 1:
-			retArray = tsbk.restore_cluster(0, Token, topology_name, tenant_name, node_list,restore_name=ret[1])
-			res_data.update({KEY_STATUS:retArray[0]})
-			res_data.update({KEY_MSG:retArray[1]})
-		else:
-			res_data.update({KEY_STATUS:"1"})
-			res_data.update({KEY_MSG:"Restore folder is none"})
+		res_data.update({KEY_STATUS:retArray[0]})
+		res_data.update({KEY_MSG:retArray[1]})
 
 
 	if 'b' == br_mode:
 		#pass
-		#ret=["OK","restore success"]
+		#retArray=["OK","restore success"]
 		tsbk=tsbk_manager.tsbk_manager(logger)
 		retArray = tsbk.backup_cluster(0, Token, topology_name, tenant_name, node_list,backup_name=backup_name)
 		res_data.update({KEY_STATUS:retArray[0]})

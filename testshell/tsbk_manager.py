@@ -615,6 +615,25 @@ class tsbk_manager:
             self.br_log(node_id, CLSTER_NAME, br_mode, '###get token ng')
             return [NG, '###get token ng']
 
+        ##################
+        #check delete data num
+        ##################
+
+        #get data
+        db_clster_name = "TS_" + domain +"_" + topology_name + "_ID0"
+        getArray = self.get_restore_folder_list(node_id, CLSTER_NAME, br_mode, db_clster_name)
+
+        #check data num
+        if (getArray[0] == 0) and (len(getArray)==2):
+            backupFolderList = getArray[1]
+            backupdata_num=len(backupFolderList)
+
+            if backupdata_num >= self.restore_maxFolderNum :
+                msg='#### err:backup Data Num is Max, Plese delete Backup Data by Cloud Shell delete function' + \
+                    '::backupdata_num=%s max_backupdata_Num=%s' %(backupdata_num, self.restore_maxFolderNum)
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg)
+                return [NG, msg]
+
         #start time get
         time1 = time.time()
 
@@ -974,6 +993,266 @@ class tsbk_manager:
 
         return [OK, 'Backup ok'] #END
 
+    #####################
+    #Backup Module
+    #####################
+    def backup_cluster_sub2(self, node_id, token, topology_name, domain, node_name,**kwargs):
+
+        #####################
+        #B predefine
+        #####################
+
+        br_mode="b"
+        CLSTER_NAME = "TS_" + domain +"_" + topology_name
+
+        ret=self.check_inputdata(node_id, CLSTER_NAME, br_mode, domain, topology_name)
+
+        if ret[0]!=0:
+            return [NG, ret[1]]
+
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Backup Start ')
+
+        if not 'backup_name' in kwargs:
+            return [NG, 'backup folder name is required']
+
+        BACKUP_FOLDER_RNAME=CLSTER_NAME + "_ID%s" %(node_id)  +"/" +self.folder_date_str + kwargs['backup_name']
+
+
+        self.br_log(node_id, CLSTER_NAME, br_mode, '###  Input Parameter  ####')
+        self.br_log(node_id, CLSTER_NAME, br_mode, 'node_id              : %s' % node_id)
+        self.br_log(node_id, CLSTER_NAME, br_mode, 'token                : %s' % token)
+        self.br_log(node_id, CLSTER_NAME, br_mode, 'topology_name        : %s' % topology_name)
+        self.br_log(node_id, CLSTER_NAME, br_mode, 'domain               : %s' % domain)
+        self.br_log(node_id, CLSTER_NAME, br_mode, 'node_name            : %s' % node_name)
+        self.br_log(node_id, CLSTER_NAME, br_mode, 'kwargs[backup_name]  : %s' %(kwargs['backup_name']))
+
+
+
+        self.br_log(node_id, CLSTER_NAME, br_mode, 'backup_folder_name: %s' % BACKUP_FOLDER_RNAME)
+
+        ret=self.set_system_param(CLSTER_NAME,node_id,br_mode)
+        if ret!=0:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### set_system_param err'  )
+            msg='#### set_system_param err'
+            return [NG, msg]
+
+
+        #####################
+        #B define
+        #####################
+        SAVE_DIR_NAME=BASE_DIR_NAME+"/"+ BACKUP_FOLDER_RNAME +"/server"
+        SAVE_DIR_NAME_SWITCH=BASE_DIR_NAME+"/"+ BACKUP_FOLDER_RNAME +"/switch"
+
+        SERVER_INFO_FILE_NAME="serv_info"
+        SERVER_LIST_FILE=SAVE_DIR_NAME+"/"+SERVER_INFO_FILE_NAME
+
+
+        NODE_INFO_FILE_NAME="node_info"
+        NODE_LIST_FILE=BASE_DIR_NAME+"/"+ BACKUP_FOLDER_RNAME + "/" + NODE_INFO_FILE_NAME
+
+        ##################
+        #set token
+        ##################
+        ret = self.set_token(CLSTER_NAME, node_id, br_mode, token)
+
+        if ret!=0:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '###get token ng')
+            return [NG, '###get token ng']
+
+        ##################
+        #check delete data num
+        ##################
+
+        #get data
+        db_clster_name = "TS_" + domain +"_" + topology_name + "_ID0"
+        getArray = self.get_restore_folder_list(node_id, CLSTER_NAME, br_mode, db_clster_name)
+
+        #
+        if (getArray[0] == 0) and (len(getArray)==2):
+            backupFolderList = getArray[1]
+            backupdata_num=len(backupFolderList)
+
+            if backupdata_num >= self.restore_maxFolderNum :
+                msg='#### err:backup Data Num is Max, Plese delete Backup Data by Cloud Shell delete function' + \
+                    '::backupdata_num=%s max_backupdata_Num=%s' %(backupdata_num, self.restore_maxFolderNum)
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg)
+                return [NG, msg]
+
+        #start time get
+        time1 = time.time()
+
+        ########################
+        #B Get server name for opencenterDB
+        #######################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Get server name for opencenterDB')
+
+        ret = self.get_node_info( node_id, CLSTER_NAME, br_mode,node_name)
+        if ret[0]!=0:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '###Get server name for DB err')
+            return [NG, '###Get server name for DB err']
+
+        ret_info=[ret[1],ret[2]]
+
+        server_node_name = ret_info[SV_NAME]
+        server_num=len(server_node_name)
+
+        switch_node_name = ret_info[SW_NAME]
+        switch_num=len(switch_node_name)
+        switch_node_name_char=','.join(switch_node_name)
+        server_node_name_char=','.join(server_node_name)
+
+        #server,switch node info
+        backup_node_data_info = ret_info;
+
+
+        self.br_log(node_id, CLSTER_NAME, br_mode, '*** SERVER_NODE_LIST :List %s, cnt=%s' %(server_node_name,server_num))
+        self.br_log(node_id, CLSTER_NAME, br_mode, '*** SWITCH_NODE_LIST :List %s, cnt=%s' %(switch_node_name,switch_num))
+
+        if (0 == server_num) and ( 0 == switch_num):
+            #self.logger.debug('sever num = 0 then not backup')
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### sever, switch num is 0 then "no action"')
+            return [OK, 'Backup ok']
+
+
+        ######################
+        #B Make Server info list
+        ######################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Make Server info list')
+
+        server_cnt=server_num+1
+        server_info_num=4
+        server_info = [["null" for j in range(server_info_num)] for i in range(server_cnt)]
+
+        ########################
+        #B Set Storage Server info
+        ########################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Storage Server info')
+
+        retdata = self.set_server_info(node_id, server_info[0],self.storage_server_name, CLSTER_NAME, br_mode)
+        if 0 != retdata[0]:
+            #self.b_log(node_id, CLSTER_NAME, '#### server info set err')
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### server info set err')
+            msg='server info set err'
+            return [NG, msg]
+
+        ########################
+        #B Set NovaClaster Server info
+        ########################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set NovaClaster Server info')
+
+        for i in range(1, server_cnt):
+            #self.b_log(node_id, CLSTER_NAME, 'Set Server info server_node_name[%s]=%s' %( (i-1), server_node_name[i-1] ) )
+            self.br_log(node_id, CLSTER_NAME, br_mode, 'Set Server info server_node_name[%s]=%s' %( (i-1), server_node_name[i-1] ) )
+
+
+            retdata = self.set_server_info(node_id, server_info[i], server_node_name[i-1], CLSTER_NAME, br_mode)
+            if 0 != retdata[0]:
+                #self.b_log(node_id, CLSTER_NAME, '#### Set Server info  server_node_name=%s' %(server_node_name[i-1] ) )
+                self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Server info  server_node_name=%s' %(server_node_name[i-1] ) )
+
+                msg='Set Server info set server_node_name=%s' %(server_node_name[i-1])
+                return [NG, msg]
+
+        ################
+        #B Set Exec_User
+        ################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User')
+        ret = self.get_user_name(self.opencenter_server_name)
+        if 0 == ret[0]:
+            EXEC_USER=ret[1]
+        else:
+            self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User error')
+            msg='Set Exec_User error'
+            return [NG, msg]
+
+
+        #####################################
+        #B Set NovaClaster Server Make Exec Env
+        #####################################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set NovaClaster Server Make Exec Env')
+
+        for i in range(server_cnt):
+            self.br_log(node_id, CLSTER_NAME, br_mode, 'backup exec start all=%d index=%d' %(server_cnt, i))
+            ret=self.make_exec(EXEC_USER, server_info[i][IP_INDEX], server_info[i][USER_INDEX], server_info[i][PW_INDEX], FILEDIR, br_mode, node_id, CLSTER_NAME)
+            if ret!=0:
+                self.br_log(node_id, CLSTER_NAME, br_mode, '#### backup exec start err all=%d index=%d' %(server_cnt, i) )
+                msg='make_exec err'
+                return [NG, msg]
+
+        #######################
+        #B Check Directory
+        #######################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Check Directory')
+
+        cmd='ssh root@%s ls -d  %s 2> /dev/null' %(server_info[STORAGE_SV][IP_INDEX],  SAVE_DIR_NAME,)
+        ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
+        if ret==0:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### Check Directory Err (already same name dirctory)')
+            msg='Check Directory (already same name dirctory)'
+            return [NG, msg]
+
+
+
+
+        #########################################
+        #B Make Backup directory to Storage Server
+        #########################################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Make Backup directory to Storage Server')
+        cmd='%s/dirmake  %s  %s  %s  %s' %(FILEDIR, BASE_DIR_NAME, BACKUP_FOLDER_RNAME, server_info[STORAGE_SV][IP_INDEX], server_info[STORAGE_SV][USER_INDEX])
+        ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
+        if ret!=0:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### make dir err ')
+            msg='make dir err'
+            return [NG, msg]
+
+
+        #######################
+        #B Make Directory Check
+        #######################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Make Directory Check ')
+
+        cmd='ssh root@%s ls -d  %s 2> /dev/null' %(server_info[STORAGE_SV][IP_INDEX],  SAVE_DIR_NAME,)
+        ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
+        if ret!=0:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### Make Directory Check Err (directory is none)')
+            msg='Make Directory Check Err (directory is none) '
+            return [NG, msg]
+
+
+        ##########################
+        #set backup info to storage
+        ##########################
+        ret = self.trans_node_info(node_id, CLSTER_NAME, br_mode, backup_node_data_info, server_info, EXEC_USER, NODE_LIST_FILE)
+        if 0 != ret:
+            msg='#### set backup info to storage  ng '
+            self.br_log(node_id, CLSTER_NAME, br_mode, msg)
+            return [NG, msg]
+
+
+        #################
+        #set DB backup data
+        #################
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### set DB backup data  ')
+        ret = self.setdb_backup_data(CLSTER_NAME, node_id, br_mode, kwargs['backup_name'], server_node_name, switch_node_name)
+        if 0 != ret:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### set DB backup data ng ')
+            msg='#### set DB backup data ng '
+            return [NG, msg]
+
+
+        #################
+        #File & DB Delete
+        #################
+        ret=self.delete_data_and_dblist(node_id, CLSTER_NAME, br_mode, topology_name, domain, server_info, SAVE_DIR_NAME, EXEC_USER)
+        if 0 != ret:
+            msg='#### delete db and data  ng '
+            self.br_log(node_id, CLSTER_NAME, br_mode, msg)
+            return [NG, msg]
+
+        self.br_log(node_id, CLSTER_NAME, br_mode, '#### Complete Success')
+
+        return [OK, 'Backup ok'] #END
+
 
     def backup_cluster(self, node_id, token, topology_name, domain, node_name,**kwargs):
 
@@ -1103,7 +1382,7 @@ class tsbk_manager:
         #db err
         if -1 == data[0]:
             self.br_log(node_id, clster_name, br_mode, " ori.get_backup_cluster err data=%s  db_clster_name=%s" %(data,db_clster_name))
-            return [1, ""]
+            return [1, data[1]]
 
         #get registed db list
         backupAllData = data[1]
@@ -1120,7 +1399,7 @@ class tsbk_manager:
         #get db list
         retdata = self.get_restoredb_list(node_id, clster_name, br_mode,db_clster_name)
         if 0 !=retdata[0]:
-            self.br_log(node_id, clster_name, br_mode, " get_restoredb_list err")
+            self.br_log(node_id, clster_name, br_mode, " get_restoredb_list err %s" %(retdata))
             return [1, retdata[1]]
 
         restore_list = retdata[1]
@@ -1130,7 +1409,7 @@ class tsbk_manager:
 
         if len(restore_list) == 0:
             self.br_log(node_id, clster_name, br_mode, "restore_list is 0")
-            return [1, ""]
+            return [1, "404"]
 
         return [0, restore_list]
 
@@ -1178,6 +1457,151 @@ class tsbk_manager:
 
         return 0
 
+    def delete_dblist(self, node_id, Token,br_mode, topology_name, domain, input_index):
+
+        try:
+            br_mode="del"
+            CLSTER_NAME = "TS_" + domain +"_" + topology_name 
+
+            ##################
+            #make file LogName
+            ##################
+            if False == os.path.isdir(self.logpath):
+                os.mkdir(self.logpath)
+
+            self.make_log_file_name_restore(CLSTER_NAME,node_id,br_mode)
+
+            self.set_token(CLSTER_NAME, node_id, br_mode, Token)
+
+            ##################
+            #check Input folder index
+            ##################
+            #check index isdigit
+            if( False == input_index.isdigit()):
+                msg='#### index is  wrong :not number :input_index=%s' %(input_index)
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                return [NG, msg]
+
+            ######################
+            #B Make Server info list
+            ######################
+            server_cnt=1
+            server_info_num=4
+            server_info = [["null" for j in range(server_info_num)] for i in range(server_cnt)]
+
+            ##################
+            #check index range
+            ##################
+            ret=self.set_system_param(CLSTER_NAME,node_id,br_mode)
+            if ret!=0:
+                self.br_log(node_id, CLSTER_NAME, br_mode, '#### set_system_param err'  )
+                msg='#### set_system_param err'
+                return [NG, msg]
+
+            ########################
+            #B Set Storage Server info
+            ########################
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Storage Server info')
+
+            retdata = self.set_server_info(node_id, server_info[0],self.storage_server_name, CLSTER_NAME, br_mode)
+            if 0 != retdata[0]:
+                msg='storege server info set err'
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                return [NG, msg]
+
+            #num change
+            index= int(input_index)
+
+            ##################
+            #get backup data list
+            ##################
+            db_clster_name = "TS_" + domain +"_" + topology_name + "_ID0"
+            getArray = self.get_restore_folder_list(node_id, CLSTER_NAME, br_mode, db_clster_name)
+
+            #fget check
+            if (getArray[0] != 0) and (len(getArray)==2):
+                if getArray[1] == "404":
+                    msg = '###restore data is none'
+                    self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                    return [NG, msg]
+
+            #fget check ()
+            if getArray[0] != 0:
+                msg = '###You have not yet backup or restoreDB_list get err '
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                return [NG, msg]
+
+            backupFolderList = getArray[1]
+            backupdata_num=len(backupFolderList)
+
+            ################
+            #Set Exec_User
+            ################
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User')
+            ret = self.get_user_name(self.opencenter_server_name)
+            if 0 == ret[0]:
+                EXEC_USER=ret[1]
+            else:
+                self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User error')
+                msg='Set Exec_User error'
+                return [NG, msg]
+
+            ##################
+            #check index range
+            ##################
+            if( (index >  backupdata_num) or (index <  0 )):
+                msg='#### index is wrong :index=%s backupdata_num=%s' %(index, backupdata_num)
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                return [NG, msg]
+
+            if( index ==  0 ):
+                msg='#### index is wrong :start index is 0 (0 origin)' 
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                return [NG, msg]
+
+
+            ##################
+            #delete data 
+            ##################
+            i=index-1
+            rmdir=BASE_DIR_NAME+"/"+ db_clster_name+"/"+backupFolderList[i]
+
+            self.br_log(node_id, CLSTER_NAME, br_mode, '###Delete db data   backupFolderList[%s]=%s' %(i,backupFolderList[i]))
+            self.br_log(node_id, CLSTER_NAME, br_mode, '###Delete dir[%s]=%s' %(i,rmdir))
+
+            #################
+            #db delete (db)
+            #################
+            ret = 0
+            ret = self.delete_restoredb_list(node_id, CLSTER_NAME, br_mode,  db_clster_name, backupFolderList[i] )
+            if ret != 0:
+                msg='###Delete db data  backupFolderList[%s]=%s err' %(i,backupFolderList[i])
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                return [NG, msg]
+
+
+            #######################
+            #db folder (data)
+            #######################
+            cmd='ssh root@%s rm -rf %s  > /dev/null' %(server_info[STORAGE_SV][IP_INDEX], rmdir )
+            ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
+            if ret!=0:
+                msg='#### Dell Restore Status File Err '
+                self.br_log(node_id, CLSTER_NAME, br_mode, msg )
+                return [NG, msg]
+
+            return [OK, "delete OK"]
+
+        except Exception,e:
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### Exception !! #####')
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### type   :'+ str(type(e)))
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### args   :'+ str(e.args))
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### message:'+ str(e.args))
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### e_self :'+str(e))
+            self.br_log(node_id, CLSTER_NAME, br_mode, '#### trace  :%s' %(traceback.format_exc()) )
+
+            return [NG, traceback.format_exc()]
+
 
     def get_dblist(self, node_id, Token,br_mode, topology_name, domain):
 
@@ -1197,7 +1621,7 @@ class tsbk_manager:
         #folder serch :ng check
         if getArray[0] != 0:
             self.br_log(node_id, CLSTER_NAME, br_mode, '###backup data is none')
-            self.br_log(node_id, CLSTER_NAME, br_mode, '###backup folder get err')
+            #self.br_log(node_id, CLSTER_NAME, br_mode, '###backup folder get err')
             return [1,"###backup data is none"]
 
         data = getArray[1]
