@@ -397,7 +397,7 @@ class svrst_manager():
 		for i in range(1, server_cnt):
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, 'Set Server info server_node_name[%s]=%s' %( (i-1), server_node_name[i-1] ) )
 
-			retdata = self.svbkm.set_server_info_CPlane(node_id, server_info[i], server_node_name[i-1], CLSTER_NAME, br_mode)
+			retdata = self.svbkm.set_server_info(node_id, server_info[i], server_node_name[i-1], CLSTER_NAME, br_mode)
 			if 0 != retdata[0]:
 				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Server info  server_node_name=%s' %(server_node_name[i-1] ) )
 
@@ -591,7 +591,7 @@ class svrst_manager():
 		OPEN_ORION_upw=dev_data['password']
 		
 		#get IP address
-		data=self.ori.get_nic_traffic_info(self.opencenter_server_name, 'C-Plane')
+		data=self.ori.get_nic_traffic_info(self.opencenter_server_name, 'M-Plane')
 
 		if -1 != data[0]:
 			data1={}
