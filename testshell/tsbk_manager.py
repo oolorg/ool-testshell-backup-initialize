@@ -73,17 +73,6 @@ BACKUP_DATA_SV = "server"
 BACKUP_DATA_SW = "switch"
 
 BACKUP_DATA_KEY_NAME     ="name"
-BACKUP_DATA_KEY_P_ID     ="parent_id"
-BACKUP_DATA_KEY_BACKENDS ="backends"
-BACKUP_DATA_KEY_N_ID ="id"
-
-BR_AGENT_SRC_DIR='/etc/backuprestore'
-BR_AGENT='br_agent_update'
-BR_AGENT_DST_DIR='/boot'
-
-BR_ORG_UPDATE='br.org_update'
-BR_ORG='br.org'
-
 
 ###############################
 #Server Backup Up Manager
@@ -751,7 +740,9 @@ class tsbk_manager:
         #################################
         #B Check Strorage Server Disk Size
         ################################
-        cmd="ssh root@%s df -k | grep '/dev/sda1' | awk '{ print $4 }' " %(server_info[STORAGE_SV][IP_INDEX])
+        #cmd="ssh root@%s df -k | grep '/dev/sda1' | awk '{ print $4 }' " %(server_info[STORAGE_SV][IP_INDEX])
+        #storage change
+        cmd="ssh root@%s df -k | grep '/dev/mapper/storage--vg-root' | awk '{ print $4 }' " %(server_info[STORAGE_SV][IP_INDEX])
         ret_list = self.shellcmd_exec_rest_diskSize(EXEC_USER, br_mode, node_id, CLSTER_NAME,cmd)
         if 0 != ret_list[0]:
             #self.b_log(node_id, CLSTER_NAME, '#### Check Strorage Server Disk Size Err =%s' %( ret_list[0] ) )
@@ -880,7 +871,7 @@ class tsbk_manager:
                 return [NG, msg]
 
             #exec br_agent
-            cmd='ssh root@%s /boot/%s %s %s b %s' %(server_info[i][IP_INDEX], svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
+            cmd='ssh root@%s /boot/%s %s %s b %s %s %s %s' %(server_info[i][IP_INDEX], svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME, server_info[STORAGE_SV][IP_INDEX], server_info[STORAGE_SV][USER_INDEX],  server_info[STORAGE_SV][PW_INDEX])
             ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
             if ret!=0:
                 msg='make run backup  [%s] err ' % (server_info[i][IP_INDEX])
@@ -2193,7 +2184,7 @@ class tsbk_manager:
                 self.br_log(node_id, CLSTER_NAME, br_mode, msg )
                 return [NG, msg]
 
-            cmd='ssh root@%s /boot/%s %s %s r %s' %(server_info[i][IP_INDEX], svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
+            cmd='ssh root@%s /boot/%s %s %s r %s %s %s %s' %(server_info[i][IP_INDEX], svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME, server_info[STORAGE_SV][IP_INDEX], server_info[STORAGE_SV][USER_INDEX],  server_info[STORAGE_SV][PW_INDEX])
             ret = self.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
             if ret!=0:
                 msg='make run resotre  [%s] err ' % (server_info[i][IP_INDEX])

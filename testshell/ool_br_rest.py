@@ -23,6 +23,7 @@ KEY_NODE_LIST='node_list'
 KEY_OPT='option'
 KEY_STATUS='status'
 KEY_MSG='msg'
+KEY_TARGET_OS='target_os'
 
 FILEDIR="/etc/backuprestore"
 CONFIG_FILE = 'ool_br_rest.ini'
@@ -154,7 +155,6 @@ def reset():
 
 	if 'del' == br_mode:
 
-
 		index = option["index"];
 
 		tsbk=tsbk_manager.tsbk_manager(logger)
@@ -204,10 +204,16 @@ def reset():
 
 
 	if 'i' == br_mode:
+
+		if KEY_TARGET_OS in option :
+			target_os = option["target_os"]
+		else:
+			target_os = ''
+
 		svrst=svrst_manager.svrst_manager()
 		svrst.set_Token(Token)
 		svrst.set_node_list(node_list)
-		ret = svrst.reset_cluster(group_name=topology_name, tenant_name=tenant_name)
+		ret = svrst.reset_cluster(group_name=topology_name, tenant_name=tenant_name, target_os=target_os)
 
 		res_data.update({KEY_STATUS:ret[0]})
 		res_data.update({KEY_MSG:ret[1]})

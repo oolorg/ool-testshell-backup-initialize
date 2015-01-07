@@ -11,6 +11,7 @@ import ool_rm_if
 import sqlite3
 import sys
 import pexpect
+import re
 
 #disk size
 LIMIT_DISK_SIZE_G=1
@@ -42,7 +43,7 @@ RESET_ENV='INITIALIZE'
 INIT_NODE=0
 
 OK=0
-NG=1
+NG=-1
 
 SV_NAME=0
 SW_NAME=1
@@ -61,6 +62,7 @@ KNIFE='/opt/chef-server/bin/knife'
 
 TIMEOUT=30
 WAIT_CNT=10
+RETRY_CNT=5
 CONSOLE_OUT_FLAG='ON'
 EXPECT_STDPT='.*$'
 EXPECT_LOGIN='login:'
@@ -68,6 +70,8 @@ EXPECT_PASSWD='password:'
 EXPECT_YESNO='.*\(yes/no\)\?'
 SEND_EXIT='exit'
 SEND_YES='yes'
+
+DEFAULT_OS='Ubuntu_12.04LTS'
 
 #---------------------------------------------------------
 class svrst_manager():
@@ -250,7 +254,7 @@ class svrst_manager():
 			###############
 			####Restore####
 			###############
-			retArray = self.reset_cluster_sub(node_id)
+			retArray = self.reset_cluster_sub(node_id='', target_os=kwargs['target_os'])
 
 			#set mode none
 			self.svbkc.set_mode_state(CLSTER_NAME, MODE_NONE)
@@ -273,13 +277,18 @@ class svrst_manager():
 	#####################
 	#Reset Module
 	#####################
-	def reset_cluster_sub(self, node_id='', **kwargs):
+	def reset_cluster_sub(self, **kwargs):
 
 		#####################
 		#set predefine 
 		#####################
-		br_mode="r"
+		br_mode = "r"
 		CLSTER_NAME = self.topology_name
+		node_id = kwargs['node_id']
+		target_os = kwargs['target_os']
+
+		if '' == target_os:
+			target_os = DEFAULT_OS
 
 		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Reset Start ')
 
@@ -334,7 +343,7 @@ class svrst_manager():
 		########################
 		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Storage Server info')
 
-		retdata = self.svbkm.set_server_info(node_id, server_info[0], self.storage_server_name, CLSTER_NAME, br_mode)
+		retdata = self.svbkm.set_server_info_SPlane(node_id, server_info[0], self.storage_server_name, CLSTER_NAME, br_mode)
 
 		if 0 != retdata[0]:
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### server info set err')
@@ -350,7 +359,7 @@ class svrst_manager():
 		else:
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Exec_User error')
 			msg='Set Exec_User error'
-			return [NG, msg]
+			return ['NG', msg]
 
 		#####################################
 		#Set Storage Server info
@@ -397,7 +406,7 @@ class svrst_manager():
 		for i in range(1, server_cnt):
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, 'Set Server info server_node_name[%s]=%s' %( (i-1), server_node_name[i-1] ) )
 
-			retdata = self.svbkm.set_server_info(node_id, server_info[i], server_node_name[i-1], CLSTER_NAME, br_mode)
+			retdata = self.svbkm.set_server_info_CPlane(node_id, server_info[i], server_node_name[i-1], CLSTER_NAME, br_mode)
 			if 0 != retdata[0]:
 				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Set Server info  server_node_name=%s' %(server_node_name[i-1] ) )
 
@@ -447,14 +456,14 @@ class svrst_manager():
 			if 0 != ret:
 				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### SWITCH psbk.set_PS_list Err')
 
-				return [NG, '#### SWITCH psbk.set_PS_list Err psbk.set_PS_list Err)']
+				return ['NG', '#### SWITCH psbk.set_PS_list Err psbk.set_PS_list Err)']
 
 			psbk.set_auth(self.Token)
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '####SWITCH  Call psbk.exec_restore()')
 			ret=psbk.exec_restore()
 			if 0 != ret:
 				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '####SWITCH  psbk.exec_restore() Err')
-				return [NG, '####SWITCH  psbk.exec_restore() ']
+				return ['NG', '####SWITCH  psbk.exec_restore() ']
 
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '####SWITCH  Run Switch restore End')
 
@@ -481,9 +490,11 @@ class svrst_manager():
 		################
 		self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### Run backup')
 
+		svbkutl=svbk_utls.svbk_utls()
+		svbkutl.set_auth(self.Token)
+
 		for i in range(START_INDEX, server_cnt):
 			# update_br_agent
-			svbkutl=svbk_utls.svbk_utls()
 			ret =svbkutl.update_br_agent(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
 			if NG == ret[0]:
 				msg=' update_br_agent reset [%s] err' % server_info[i][IP_INDEX]
@@ -491,13 +502,81 @@ class svrst_manager():
 				return ['NG', msg]
 
 			#copy br.org_update for fast
-			ret =svbkutl.update_br_org(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
+			ret = svbkutl.update_br_org(server_info[i][USER_INDEX], server_info[i][IP_INDEX])
 			if NG == ret[0]:
 				msg='copy br.org_update [%s] err ' % (server_info[i][IP_INDEX])
 				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, msg )
 				return ['NG', msg]
 
-			cmd='ssh root@%s  /boot/%s  %s  %s  r %s' %(server_info[i][IP_INDEX],  svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME)
+			# set nic rule
+			# get mac_address from resourcedb
+			ret = svbkutl.get_macaddr(self.server_list[i-1])
+
+			if NG == ret[0]:
+				msg='get mac_address on DB [%s] err ' % (self.server_list[i-1])
+				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, msg )
+				return ['NG', msg]
+
+			nic_name=ret[1]
+			nic_mac_addr=ret[2]
+
+			# cnt nic
+			ret = svbkutl.shellcmd_exec_localhost('ifconfig -a|grep eth|wc -l')
+			if NG == ret[0]:
+				msg='get cnt nic err '
+				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, msg )
+				return ['NG', msg]
+
+#			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### nic_cnt=%s' % ret[1])
+
+			nic_cnt=ret[1]
+			own_mac_addr=[]
+			own_bus_info=[]
+			for j in range(0, int(nic_cnt)):
+				ret = svbkutl.shellcmd_exec_localhost('ethtool -P eth%s' % str(j))
+				if NG == ret[0]:
+					msg='get mac_address [eth%s] err ' % str(j)
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, msg )
+					return ['NG', msg]
+
+				patern=re.compile('([a-f0-9][a-f0-9]:)+[a-f0-9][a-f0-9]')
+				match=patern.search(ret[1])
+				own_mac_addr.append(match.group(0))
+
+#				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### own_mac_addr=%s' % own_mac_addr[j])
+
+				ret = svbkutl.shellcmd_exec_localhost('ethtool -i eth%s' % str(j))
+				if NG == ret[0]:
+					msg='get bus_info [eth%s] err ' % str(j)
+					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, msg )
+					return ['NG', msg]
+
+				patern=re.compile('[0-9][0-9]:[0-9][0-9]\.[0-9]')
+				match=patern.search(ret[1])
+				own_bus_info.append(match.group(0))
+
+#				self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### own_bus_info=%s' % own_bus_info[j])
+
+			# 
+			nic_rule=''
+			for k in range(0, int(nic_cnt)):
+				for m in range(0, len(nic_name)):
+					if own_mac_addr[k] == nic_mac_addr[m]:
+						if '' == nic_rule:
+							nic_rule= '%s,%s' % (nic_name[m],own_bus_info[k])
+						else:
+							nic_rule= '%s,%s,%s' % (nic_rule, nic_name[m],own_bus_info[k])
+						break;
+					else:
+						if '' == nic_rule:
+							nic_rule= 'eth%s,%s' % (k,own_bus_info[k])
+						else:
+							nic_rule= '%s,eth%s,%s' % (nic_rule, k,own_bus_info[k])
+						break;
+
+			nic_rule=nic_rule + ",end,end"
+			cmd='ssh root@%s /boot/%s %s %s r %s %s %s %s %s %s' % (server_info[i][IP_INDEX], svbkutl.get_br_agent_name(), server_info[i][USER_INDEX], server_info[i][PW_INDEX], SAVE_DIR_NAME, server_info[STORAGE_SV][IP_INDEX], server_info[STORAGE_SV][USER_INDEX],  server_info[STORAGE_SV][PW_INDEX], target_os, nic_rule)
+
 			ret = self.svbkm.shellcmd_exec(EXEC_USER,br_mode, node_id, CLSTER_NAME, cmd)
 			if ret != 0:
 				msg=' make run reset [%s] err' % server_info[i][IP_INDEX]
@@ -591,7 +670,7 @@ class svrst_manager():
 		OPEN_ORION_upw=dev_data['password']
 		
 		#get IP address
-		data=self.ori.get_nic_traffic_info(self.opencenter_server_name, 'M-Plane')
+		data=self.ori.get_nic_traffic_info(self.opencenter_server_name, 'C-Plane')
 
 		if -1 != data[0]:
 			data1={}
@@ -695,20 +774,23 @@ class svrst_manager():
 					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX]))
 #					return ['NG', 'setup opencenter-agent del err (%s)' %(server_info[i][NAME_INDEX])]
 	
-				cmd = 'curl -s -L http://sh.opencenter.rackspace.com/install.sh | sudo bash -s - --role=agent --ip=%s' % (OPEN_ORION)
+				cmd = 'curl -s -L http://sh.opencenter.rackspace.com/install.sh | bash -s - --role=agent --ip=%s' % (OPEN_ORION)
 				cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
 
-				ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
-				if ret!=0:
-					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX]))
-#					return ['NG', 'setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX])]
+				for loop_cnt in range(0, RETRY_CNT):
+					ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
+					if ret!=0:
+						self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX]))
+#						return ['NG', 'setup opencenter-agent err (%s)' %(server_info[i][NAME_INDEX])]
 
-				cmd = 'patch /usr/share/pyshared/opencenteragent/__init__.py < /home/openstack/agent.patch'
-				cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
+					else:
+						cmd = 'patch /usr/share/pyshared/opencenteragent/__init__.py < /home/openstack/agent.patch'
+						cmd = 'ssh root@%s "%s"' % (server_info[i][IP_INDEX], cmd)
 
-				ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
-				if ret!=0:
-					self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent patch err (%s)' %(OPEN_ORION))
+						ret = self.svbkm.shellcmd_exec(EXEC_USER, br_mode, node_id, CLSTER_NAME, cmd)
+						if ret!=0:
+							self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### setup opencenter-agent patch err (%s)' %(OPEN_ORION))
+						break
 
 			self.svbkm.br_log(node_id, CLSTER_NAME, br_mode, '#### OpenOrion agent restart')
 			self._restart_opencenter_agent(OPEN_ORION, OPEN_ORION_user, OPEN_ORION_upw)
