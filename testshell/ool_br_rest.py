@@ -11,8 +11,8 @@ import logging.handlers
 import svbk_conflict
 
 app = Flask(__name__)
-app.debug = True
-#app.debug = False
+#app.debug = True
+app.debug = False
 
 KEY_TOKEN='Token'
 KEY_TOPOLOGY='topology_name'
@@ -25,7 +25,8 @@ KEY_STATUS='status'
 KEY_MSG='msg'
 KEY_TARGET_OS='target_os'
 
-FILEDIR="/etc/backuprestore"
+#FILEDIR="/etc/backuprestore"
+FILEDIR = "/etc/ool_br_rest"
 CONFIG_FILE = 'ool_br_rest.ini'
 
 logger = logging.getLogger('bktestShelllog')
@@ -128,8 +129,11 @@ def reset():
 			raise Exception
 
 		br_mode = req_data[KEY_BR_MODE]
-		if (('r' != br_mode) and ('b' != br_mode) and ('i' != br_mode) and ('r_info' != br_mode) and ('del' != br_mode)):
-			err_msg=KEY_BR_MODE
+		if (('r' != br_mode) and ('b' != br_mode) and
+					('i' != br_mode) and ('post_init' != br_mode) and
+					('teardown' != br_mode) and
+					('r_info' != br_mode) and ('del' != br_mode)):
+			err_msg = KEY_BR_MODE
 			raise Exception
 	
 		backup_name = req_data[KEY_BACKUP]
@@ -210,13 +214,42 @@ def reset():
 		else:
 			target_os = ''
 
-		svrst=svrst_manager.svrst_manager()
+		svrst = svrst_manager.svrst_manager()
 		svrst.set_Token(Token)
 		svrst.set_node_list(node_list)
-		ret = svrst.reset_cluster(group_name=topology_name, tenant_name=tenant_name, target_os=target_os)
+		ret = svrst.reset_cluster(topology_name=topology_name, tenant_name=tenant_name, target_os=target_os)
 
-		res_data.update({KEY_STATUS:ret[0]})
-		res_data.update({KEY_MSG:ret[1]})
+		res_data.update({KEY_STATUS: ret[0]})
+		res_data.update({KEY_MSG: ret[1]})
+
+	if 'post_init' == br_mode:
+		svrst = svrst_manager.svrst_manager()
+		svrst.set_Token(Token)
+		ret = svrst.set_node_list(node_list)
+		if ret == -1:
+			res = Response()
+			res.status_code = 400
+			res.data = json.dumps({"status": "NG", "msg": "bad parameter:key(KEY_TOKEN is invalid)"})
+			return res
+
+		ret = svrst.reset_fuelenviroment()
+
+		res_data.update({KEY_STATUS: ret[0]})
+		res_data.update({KEY_MSG: ret[1]})
+
+	if 'teardown' == br_mode:
+		svrst = svrst_manager.svrst_manager()
+		svrst.set_Token(Token)
+		ret = svrst.set_node_list(node_list)
+		if ret == -1:
+			res = Response()
+			res.status_code = 400
+			res.data = json.dumps({"status": "NG", "msg": "bad parameter:key(KEY_TOKEN is invalid)"})
+			return res
+
+		ret = svrst.teardown_server(topology_name=topology_name, tenant_name=tenant_name)
+		res_data.update({KEY_STATUS: ret[0]})
+		res_data.update({KEY_MSG: ret[1]})
 
 	res=json.dumps(res_data)
 	return res
@@ -232,5 +265,5 @@ if __name__ == "__main__":
 
 	ret = set_system_param()
 	if 0 == ret[0]:
-		app.run(host=ret[1], port=int(ret[2]))
+		app.run(host=ret[1], port=int(ret[2]), processes=3)
 
