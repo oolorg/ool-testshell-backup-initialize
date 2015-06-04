@@ -19,6 +19,7 @@ AUTH_KEY='xxx'
 
 BACKDIR="/backup/"
 PY_PATH=os.path.abspath(os.path.dirname(__file__))
+CONFIG_PATH = '/etc/ool_br_rest'
 CONFIG_FILE = 'switch.ini'
 TST_FILE='psbk_manager_tst.cnf'
 
@@ -56,6 +57,7 @@ class psbk_manager:
 		self.logger = ObjLog
 		self.sync_mode = 'SYNC'
 		self.time_out = 120
+		self.exclude_list = ''
 
 		self.ori.set_auth(AUTH_KEY)
 
@@ -131,9 +133,31 @@ class psbk_manager:
 		self.__trace_log__('get_PS_info OUT')
 		return 0
 
+	def get_PS_cnt(self):
+		self.__trace_log__('get_PS_cnt IN')
+
+		wk_list = self.ps_list.split(',')
+		cnt = len(wk_list)
+
+		if cnt == 1 and wk_list[0] == '':
+			cnt = 0
+
+		self.__trace_log__('get_PS_cnt OUT (%s)' % cnt)
+		return cnt
+
 	def set_PS_list(self, PS_list):
 		self.__trace_log__('set_PS_list IN')
 		self.ps_list = PS_list
+		
+		wk_list = self.ps_list.split(',')
+		wk_exclude_list = self.exclude_list.split(',')
+
+		for exclude_data in wk_exclude_list:
+			while exclude_data in wk_list:
+				wk_list.remove(exclude_data)
+
+		self.ps_list =  ",".join(wk_list)
+
 		self.__trace_log__('set_PS_list OUT')
 		return 0
 
@@ -145,7 +169,7 @@ class psbk_manager:
 
 	def set_config(self, Conf_Dir):
 		if "" == Conf_Dir:
-			conf_path = './%s' % CONFIG_FILE
+			conf_path = '%s/%s' % (CONFIG_PATH, CONFIG_FILE)
 		else:
 			conf_path = '%s/%s' % (Conf_Dir, CONFIG_FILE)
 
@@ -156,10 +180,13 @@ class psbk_manager:
 			self.__trace_log__('#### setting default to sync mode for switch')
 			self.sync_mode = 'SYNC'
 			self.time_out = 120
+			self.exclude_list = ''
 		else:
 			self.sync_mode = conf.get('mode', 'sync_mode')
-			self.time_out    = conf.get('mode', 'time_out')
-			self.__trace_log__('#### setting value(%s, %s) to sync mode for switch' % self.sync_mode, str(self.time_out))
+			self.time_out  = conf.get('mode', 'time_out')
+			self.__trace_log__('#### setting value(%s, %s) to sync mode for switch' % (self.sync_mode, str(self.time_out)))
+			self.exclude_list = conf.get('etc', 'exclude_list')
+			self.__trace_log__('#### setting value(%s) to exclude_list for switch' % self.exclude_list)
 
 	def exec_backup(self):
 		self.__trace_log__('exec_backup IN')

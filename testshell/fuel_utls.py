@@ -6,6 +6,7 @@ import ipmi_client
 import json
 import urllib2
 import time
+from retry import retry
 
 MODE_BACKUP = "backup"
 MODE_RESTORE = "restore"
@@ -14,10 +15,7 @@ MODE_RESTORE = "restore"
 class node_nic_info:
 
     # Nic Traffic Tyep
-    #C_PLANE = '001'
     M_PLANE = '002'
-    #D_PLANE = '003'
-    #S_PLANE = '004'
     B_PLANE = '005'
     M2_PLANE = '006'
     UNUSED = '999'
@@ -74,30 +72,33 @@ def node_reboot(tokenid, hostname, username, password, ip_address=''):
     except pxssh.ExceptionPxssh, e:
         print "pxssh failed on login."
         print str(e)
+        print "use bmc reboot."
+        ret = bmc_reboot(tokenid, hostname)
+        return ret
 
     except pexpect.EOF:
         # use bmc port reboot
         print "pxssh failed on login. use bmc reboot"
+
+        ret = bmc_reboot(tokenid, hostname)
+        return ret
+
+
+def bmc_reboot(tokenid, hostname):
 
         nicinfo = node_nic_info(tokenid, hostname)
         bmc_address = nicinfo.get_ip_address(nicinfo.B_PLANE)
         if (bmc_address == -1):
             print "node_reboot get_nic Error(bmc)"
             return -1
-        #else:
-        #    print bmc_address
 
         ipmi = ipmi_client.IpmiClient()
         ret = ipmi.run_reboot(bmc_address)
-        #ret = ipmi.get_all_status(bmc_address)
-        #print ret
         if 'error' == ret:
             ret = ipmi.run_reset(bmc_address)
             if 'error' == ret:
                 print "node_reboot bmc reboot error"
                 return -1
-
-        return 0
 
 
 def clonezilla_exec(tokenid, mode, clonezilla_info, server_info, server_cnt, img_pre=''):
@@ -124,7 +125,6 @@ def clonezilla_exec(tokenid, mode, clonezilla_info, server_info, server_cnt, img
         s.sendline(clonezilla_password)
         s.prompt()
 
-        chk_string = []
         for i in range(server_cnt):
             server_cip = server_info[i]['ip_address_c']
             if img_pre != '':
@@ -134,14 +134,13 @@ def clonezilla_exec(tokenid, mode, clonezilla_info, server_info, server_cnt, img
 
             cmd = cmd_format % (server_cip, save_img)
             print cmd
-            #--- Fuel Server image restore command to Clonsezilla
+            # --- Fuel Server image restore command to Clonsezilla
             s.sendline(cmd)
             s.prompt()
-            time.sleep(15)
+            # clonezilla bug wait next command
+            time.sleep(30)
 
-            chk_string.append('client ' + server_cip)
-
-            #--- reboot Fuel node
+            # --- reboot Fuel node
             ret = node_reboot(
                 tokenid,
                 server_info[i]['hostname'],
@@ -153,43 +152,30 @@ def clonezilla_exec(tokenid, mode, clonezilla_info, server_info, server_cnt, img
                 print 'xxx reboot error'
                 return -1
 
-        chk_string.append("dummy 0.0.0.0")
-        print chk_string
-
-        #--- wait for finish restore
-        #time.sleep(30)
-        #s.expect('You are in clonezilla box mode!')
-        s.sendline('tail -f /var/log/clonezilla/clonezilla-jobs.log')
-
-        chk_server_cnt = server_cnt
-        #print 'chk_server_cnt:' + str(chk_server_cnt)
-        while chk_server_cnt > 0:
-            #print chk_string
-            # todo timeout set time & timeout process
-            s.expect(chk_string, timeout=20*60)
-            #print "s.after:" + s.after
-            #print "s.before:" + s.before
-            #print "s.buffer:" + s.buffer
-            chk_server_cnt -= 1
-
-        s.sendcontrol('c')
-        s.prompt()
-        s.sendline('cat /var/log/clonezilla/clonezilla-jobs.log')
-        s.prompt()
-        logs = s.before
-        print logs
-
         s.logout()
+
+        time.sleep(8*60)
+        for server in server_info:
+            wait_start_node(server['ip_address'], server['username'], server['password'])
+
+        return 0
 
     except pxssh.ExceptionPxssh, e:
         print "pxssh failed on login."
         print str(e)
 
-    if "error" in logs:
-        # todo err message
-        #self.br_log(node_id, CLSTER_NAME, br_mode, '#### Start status check')
 
-        return -1
+@retry(pexpect.EOF, tries=100, delay=20)
+def wait_start_node(server_mip, username, password):
+
+    try:
+        s = pxssh.pxssh()
+        s.login(server_mip, username, password, login_timeout=10*60)
+        s.logout()
+
+    except pxssh.ExceptionPxssh, e:
+        print "pxssh failed on login."
+        print str(e)
 
     return 0
 
@@ -208,11 +194,6 @@ def http_request(url, params, cmd):
 
     # リクエストを送信して結果受け取り
     r = urllib2.urlopen(request)
-
-    # 結果の中身を読み取る
-    #contents_str = contents.read()
-    #contens_dict = json.loads(contents_str)
-    #esult = contens_dict["result"]
 
     print r.code
     print r.msg
